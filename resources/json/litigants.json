@@ -1,0 +1,14 @@
+[
+    {
+        "entity_id": "litigant_entity",
+        "last_name": "Found",
+        "first_name": "Sarah",
+        "full_name": "Sarah Found",
+        "role": {
+            "code": "10",
+            "rank": "1",
+            "description": "Summary description."
+        },
+        "number": "0"
+    }
+]
