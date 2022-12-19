@@ -1,4 +1,5 @@
 import { Mutex } from "async-mutex";
+import { SchemaTypeOptions } from "mongoose";
 
 interface IIndexSignature {
   [key: string]: any;
@@ -131,14 +132,14 @@ class Model<Type> {
       this.data.push(document);
     } finally {
       this.mutex.release();
-    }    
+    }
   }
 
   //eslint-disable-next-line @typescript-eslint/ban-types
   countDocuments(params: typeof this.schema) {
     return {
       exec: async () => {
-        const documents = await this.query(params);
+        const documents = await this.query(params, 'find');
         const count = documents.length;
         return count;
       }
@@ -147,10 +148,15 @@ class Model<Type> {
 
   //eslint-disable-next-line @typescript-eslint/ban-types
   find(params: Object) {
-    return { 
-      exec: async () => { return this.query(params) },
-      lean: () => { return { exec: async () => {
-        return this.query(params) }}}
+    return {
+      exec: async () => { return this.query(params, 'find') },
+      lean: () => {
+        return {
+          exec: async () => {
+            return this.query(params, 'find')
+          }
+        }
+      }
     };
   }
 
@@ -181,47 +187,19 @@ class Model<Type> {
    * A mock of the Mongoose Query class housed within the Mongoose Model mock.
    * 
    * @param{Object} param A MongoDB filter.
-   * @param{string} condition When possessing the string value 'filter', this method excludes elements that match the filter. When undefined, matching elements are returned.
+   * @param{string} condition When possessing the string value 'filter', this method excludes elements that match the filter; with 'find' this method returns matching elements; and with 'update' and 'updateOne' this method updates elements present in this.data .
+   * @param{any} update Field values to update matches when an 'update' and 'updateOne' condition is supplied.
+   * @param{any} options MongoDB operator options. 
+   * 
    * @returns A list of documents from the collection that match or filter all documents in the collection.
    */
   //eslint-disable-next-line @typescript-eslint/ban-types
-  async query(params: Object, condition?: string) {
+  async query(params: Object, condition: string, update?: any, options?: any) {
     await this.mutex.acquire();
-    let documents: Array<any>;
+    let documents: Array<any> = new Array();
     try {
-      let matchCondition = true;
-      if (condition === 'filter') {
-        matchCondition = false;
-      }
-      // If params, a MongoDB filter, is not empty,
-      if (this.data.length != 0 && params !== undefined && Object.keys(params).length !== 0) {
-        documents = this.data.filter((document) => {
-          for (const [key, value] of Object.entries(params)) {
-            const parameterValueProperties = Object.keys(value);
-            const fieldValue = document[key as keyof typeof document];
-            // If query operators are present
-            if (parameterValueProperties.some(elem => ['$gt', '$in', '$lt'].includes(elem))) {
-              // Evaluate each query operator
-              for (const queryOperator of parameterValueProperties) {
-                // Return a failing match condition if the evaluation fails.
-                if (queryOperator === '$gt' && fieldValue < value['$gt']) {
-                  return !matchCondition;
-                } else if (queryOperator === '$in' && !value['$in'].includes(fieldValue)) {
-                  return !matchCondition;
-                } else if (queryOperator === '$lt' && fieldValue > value['$lt']) {
-                  return !matchCondition;
-                }
-              }
-              // Return a match if no evaluations fail.
-              return matchCondition;
-            } else if (fieldValue == value) {
-              return matchCondition;
-            } else {
-              return !matchCondition;
-            }
-          }
-        });
-      } else {
+      // If params, a MongoDB filter, empty,
+      if (this.data.length == 0 && params === undefined && Object.keys(params).length === 0) {
         // When an empty parameter (MongoDB filter) is present,
         if (condition === 'filter') {
           // And the callee is an operation (e.g. remove())
@@ -234,10 +212,76 @@ class Model<Type> {
           // return all documents in the collection.
           documents = this.data;
         }
+      } else {
+        for (let index = 0; index < this.data.length; index++) {
+          debugger;
+          let document = this.data[index];
+          let matched = true;
+          for (const [key, value] of Object.entries(params)) {
+            const parameterValueProperties = Object.keys(value);
+            const fieldValue = document[key as keyof typeof document];
+            // If query operators are present
+            if (parameterValueProperties.some(elem => ['$gt', '$in', '$lt'].includes(elem))) {
+              // Evaluate each query operator
+              for (const queryOperator of parameterValueProperties) {
+                // Break if the evaluation fails.
+                if (queryOperator === '$gt' && fieldValue < value['$gt']) {
+                  matched = false;
+                  break; // The comparison failed, break from for (const [key, value] of Object.entries(params)) { ...
+                } else if (queryOperator === '$in' && !value['$in'].includes(fieldValue)) {
+                  matched = false;
+                  break; // The comparison failed, break from for (const [key, value] of Object.entries(params)) { ...
+                } else if (queryOperator === '$lt' && fieldValue > value['$lt']) {
+                  matched = false;
+                  break; // The comparison failed, break from for (const [key, value] of Object.entries(params)) { ...
+                }
+              }
+            } else if (fieldValue != value) {
+              matched = false;
+              break; // The comparison failed, break from for (const [key, value] of Object.entries(params)) { ...
+            }
+          }
+
+          if (matched === true) {
+            if (condition === 'find') {
+              // If finding documents and a document is found then add the matched document to the documents array.
+              documents.push(this.data[index])
+            } else if (condition === 'update' || condition === 'updateOne') {
+              debugger;
+              // If updating one document and a document is found then update the matched document.
+              for (const [key, propertyValue] of Object.entries(update)) {
+                if (Object.hasOwn(this.data[index], key)) {
+                  this.data[index][key] = propertyValue;
+                } else {
+                  Object.defineProperty(this.data[index], key, {
+                    value: propertyValue,
+                    enumerable: true,
+                    writable: true
+                  })
+                }
+              }
+
+              if (condition == 'updateOne') {
+                break; // One document has been updated, break from for (let index = 0; index < this.data.length; index++) { ...
+              }
+            }
+          } else {
+            if (condition == 'filter') {
+              // If filtering documents and a document does not match the filter then add that document to the documents array.
+              documents.push(this.data[index])
+            }
+          }
+
+          if (matched == false && options !== undefined && options.upsert !== undefined && options.upsert === true && (condition == 'update' || condition == 'updateOne')) {
+            const document = this.schema.document(update, this);
+            this.data.push(document);
+          }
+        }
       }
     } finally {
       this.mutex.release();
     }
+    debugger;
     return documents;
   }
 
@@ -256,6 +300,14 @@ class Model<Type> {
     };
   }
 
+updateOne(params: Object, update: any, options?: any) {
+    // If there are no documents in the collection and upsert is true then create a new document.
+    if (this.data.length === 0 && options !== undefined && options.upsert !== undefined && options.upsert === true) {
+      this.create(update);
+    } else {
+      this.query(params, 'updateOne', update, options);
+    }
+  }
 }
 
 const mongoose = {
