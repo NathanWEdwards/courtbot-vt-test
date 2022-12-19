@@ -41,11 +41,11 @@ class TestFtp(TestCase):
         close(file_descriptor)
 
         # Create an XLSX file
-        attorneys = resources / "json/attorneys.json"
-        cases = resources / "json/cases.json"
-        court_divisions = resources / "json/court_divisions.json"
-        judges = resources / "json/judges.json"
-        litigants = resources / "json/litigants.json"
+        attorneys = resources / "json" / "attorneys.json"
+        cases = resources / "json" / "cases.json"
+        court_divisions = resources / "json" / "court_divisions.json"
+        judges = resources / "json" / "judges.json"
+        litigants = resources / "json" / "litigants.json"
         rows = list()
         event = event_document(attorneys, cases, court_divisions, judges, litigants)
         row = event_document_as_court_schedule_file_row(event)
