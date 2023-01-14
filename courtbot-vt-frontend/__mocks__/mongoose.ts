@@ -214,7 +214,6 @@ class Model<Type> {
         }
       } else {
         for (let index = 0; index < this.data.length; index++) {
-          debugger;
           let document = this.data[index];
           let matched = true;
           for (const [key, value] of Object.entries(params)) {
@@ -247,7 +246,6 @@ class Model<Type> {
               // If finding documents and a document is found then add the matched document to the documents array.
               documents.push(this.data[index])
             } else if (condition === 'update' || condition === 'updateOne') {
-              debugger;
               // If updating one document and a document is found then update the matched document.
               for (const [key, propertyValue] of Object.entries(update)) {
                 if (Object.hasOwn(this.data[index], key)) {
@@ -281,7 +279,6 @@ class Model<Type> {
     } finally {
       this.mutex.release();
     }
-    debugger;
     return documents;
   }
 
